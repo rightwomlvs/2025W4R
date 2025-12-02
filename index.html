@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Hero's Mailbox - Detective Edition</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'line-header': '#2c3e50', // 深色標題
+                        'line-bg': '#9bbad8',     // 聊天室背景藍
+                        'line-green': '#06c755',  // LINE 官方綠
+                        'line-user': '#9de694',   // 用戶對話框綠
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Mobile Optimization */
+        body { overscroll-behavior-y: none; }
+        
+        /* Custom Scrollbar */
+        .chat-scroll::-webkit-scrollbar { width: 4px; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+
+        /* Animations */
+        @keyframes message-pop {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .msg-animate { animation: message-pop 0.3s ease-out forwards; }
+
+        /* Typing Indicator Animation */
+        .typing-dot { animation: typingBounce 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typingBounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        /* Chat Bubble Tails */
+        .bubble-left::before {
+            content: "";
+            position: absolute;
+            top: 12px;
+            left: -6px;
+            width: 0;
+            height: 0;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-right: 8px solid white;
+        }
+        .bubble-right::before {
+            content: "";
+            position: absolute;
+            top: 12px;
+            right: -6px;
+            width: 0;
+            height: 0;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-left: 8px solid #06c755;
+        }
+    </style>
+</head>
+<body class="bg-gray-800 h-[100dvh] w-full flex justify-center items-center font-sans overflow-hidden">
+
+    <!-- Game Container (Phone Frame) -->
+    <div class="relative w-full h-full md:max-w-[400px] md:h-[85vh] md:rounded-3xl md:shadow-2xl bg-line-bg flex flex-col overflow-hidden md:border md:border-gray-600">
+        
+        <!-- Header -->
+        <header class="bg-line-header text-white p-4 flex items-center justify-between shadow-md z-20 shrink-0 h-16">
+            <button class="text-xl opacity-80 hover:opacity-100 w-8" onclick="location.reload()">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <div class="text-center">
+                <h1 class="font-bold text-lg tracking-wide">HR Detective Unit 🕵️</h1>
+                <p class="text-[10px] text-gray-300 opacity-80">Case #2025 Active</p>
+            </div>
+            <button class="text-xl opacity-80 hover:opacity-100 w-8">
+                <i class="fas fa-bars"></i>
+            </button>
+        </header>
+
+        <!-- Chat Area -->
+        <main id="chat-box" class="flex-1 overflow-y-auto p-4 space-y-4 chat-scroll relative bg-line-bg">
+            <!-- Dynamic content will be injected here -->
+        </main>
+
+        <!-- Typing Indicator (Overlay) -->
+        <div id="typing-indicator" class="absolute bottom-[80px] left-4 z-30 hidden transition-opacity duration-300">
+            <div class="bg-white p-3 rounded-2xl shadow-md flex items-center gap-1 w-16 h-10 bubble-left relative">
+                <div class="w-1.5 h-1.5 bg-gray-500 rounded-full typing-dot"></div>
+                <div class="w-1.5 h-1.5 bg-gray-500 rounded-full typing-dot"></div>
+                <div class="w-1.5 h-1.5 bg-gray-500 rounded-full typing-dot"></div>
+            </div>
+            <span class="text-[10px] text-gray-600 ml-1 mt-1 block">Commander typing...</span>
+        </div>
+
+        <!-- Input Area -->
+        <footer class="bg-white p-2 md:p-3 flex items-center gap-2 border-t border-gray-200 z-40 shrink-0 safe-pb">
+            <button class="text-gray-400 p-2 hover:bg-gray-100 rounded-full transition">
+                <i class="fas fa-plus"></i>
+            </button>
+            <button class="text-gray-400 p-2 hover:bg-gray-100 rounded-full transition">
+                <i class="fas fa-camera"></i>
+            </button>
+            <button class="text-gray-400 p-2 hover:bg-gray-100 rounded-full transition">
+                <i class="fas fa-image"></i>
+            </button>
+            <div class="flex-1 relative">
+                <input type="text" id="user-input" class="w-full bg-gray-100 text-gray-800 text-sm rounded-full py-2.5 px-4 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all placeholder-gray-400" placeholder="Type a message..." autocomplete="off">
+            </div>
+            <button id="send-btn" class="text-white bg-line-green hover:bg-green-600 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-paper-plane text-sm"></i>
+            </button>
+        </footer>
+    </div>
+
+    <script>
+        // --- 1. Game Content & Configuration ---
+        const gameData = {
+            intro: {
+                part1: "Agent, welcome back.<br>探員，歡迎歸隊。",
+                image: "https://lh7-rt.googleusercontent.com/docsz/AD_4nXc2JxSrSNGV08gDNV0wjf74pxBNgNmLHHAx3wZ-QiAucwpD_Mvk_bJLG2qkZyysCLINcFkcBAnJJYHH7A58e8fV-m2nk9TivUt6DoQLpJ8QLRmIQ65OCAp8833VI_KiVg?key=fmW2EZQh-sSdi6uYu8ZY-w",
+                part2: "We have 5 classified files that need your analysis.<br>我們有 5 份機密檔案需要你的分析。<br><br><b>Please consult your '2025 Write for Rights' brochure. Vital clues are hidden inside.</b><br><b>請參閱你手上的《2025 寫信馬拉松小報》，關鍵線索就藏在其中。</b><br><br>Type <b>'Start'</b> to open Case File #1."
+            },
+            level1: {
+                text: "📂 **File #1: The Missing Data**<br><br>The 2024 report is corrupted.<br>2024年的報告數據損毀了。<br><br>Examine the image below. What is the participation number for 2024?<br>觀察下方圖表細節，2024年的參與人數是多少？",
+                image: "https://lh7-rt.googleusercontent.com/docsz/AD_4nXd8MUnQdhMn7ISaQkcZfMw6xxwv0cn9WrlfVcPIuf2hC-W41VoQic3F-u19zLNNSKxt2wqnS8Dm5Gr3sMExvOJxzkMcQqAytuwbfbZoHRmR80_itb7V_SARmsQAC3qTyjc?key=fmW2EZQh-sSdi6uYu8ZY-w"
+            },
+            level2: {
+                text: "📂 **File #2: The Crime Scene**<br><br>Unecebo (3 years old) died here.<br>Unecebo 在此喪生。<br><br><b>Consult the 'South Africa (南非)' case in your brochure.</b><br><b>查閱小報中關於「南非」的檔案。</b><br><br>Look at the sketch. Which item is the 'Death Trap'?<br>觀察現場素描。哪一個物品是「死亡陷阱」？<br>(Type the item name)",
+                video: "zRkgHJRjtw0", // Unecebo video
+                image: "https://lh7-rt.googleusercontent.com/docsz/AD_4nXeaugSKxv3iw40wsYCyqJXssBLMUQxMDK3MsLpDZdSV4GLxJ17TXv_JDHOWpeZCKzqSpuTgAdjwTdEBkr9KNEwA3_syC0OTQIUY1wiCwHjbfh9ytQ1eVHx1BbeVsvmf2bY?key=fmW2EZQh-sSdi6uYu8ZY-w"
+            },
+            level3: {
+                text: "📂 **File #3: The Truth Test**<br><br>We have 3 witness statements about Human Rights.<br>我們有三份關於人權的證詞。<br><br>Only one is TRUE. Which one?<br>只有一份是真的，是哪一份？<br>(Type A, B, or C)",
+                image: "https://lh7-rt.googleusercontent.com/docsz/AD_4nXdMqrCnJaEMiH8l6N3bjy-7wWK6FOCv4GkSojsfaaBbdsZTQF1Fq3IL4TGg-2-RoRwuSI01hz3VinzGjhkWH17Erd9xb7qAbEgo2H86gb0QllSsQlH77NBRPCED86w9y2g?key=fmW2EZQh-sSdi6uYu8ZY-w",
+                successImage: "https://lh7-rt.googleusercontent.com/docsz/AD_4nXcCbBv74SG5vd5T6FZQH1u4V-heaVtALN4rESK49yhjvxJ9mKdWhgqFHekH-zLI33CbRo9l8GRXLbidCG2vWGP4Qlf_FpGqgS6gLi3AL3FLufINk8tA13zDQL2kuWSrKGA?key=fmW2EZQh-sSdi6uYu8ZY-w"
+            },
+            level4: {
+                text: "📂 **File #4: The Profile**<br><br>This hero was murdered in Honduras.<br>這位英雄在宏都拉斯遇害。<br><br><b>Find the 'Honduras (宏都拉斯)' case in your brochure.</b><br><b>在小報中找出「宏都拉斯」的案件。</b><br><br>Examine the evidence board. Who is he?<br>檢查證物板。他是誰？<br>(Type his name)",
+                image: "https://lh7-rt.googleusercontent.com/docsz/AD_4nXednPvFlZ9cMtiryjo3MOJPCi-2wHDMx7MSL3ojAmvAsVvoBZB9FCX_KVfLF4oLFKkw5GCqMv4TXouLaokkR7GTz0Q_ATsP-0I-mIl3xI4kjR8fnNXOnCPrxI6TgPR6AA?key=fmW2EZQh-sSdi6uYu8ZY-w",
+                successVideo: "q9fjmZI_Opk" // Juan Lopez video
+            },
+            level5: {
+                text: "📂 **File #5: The Silenced Lawyer**<br><br>Final Task. Sonia Dahmani was arrested at the Tunisian Bar Association.<br>最終任務。索妮亞·達赫瑪妮在突尼斯律師協會遭逮捕。<br><br><b>Read the 'Tunisia (突尼西亞)' section in your brochure.</b><br><b>詳讀小報中「突尼西亞」的段落。</b><br><br>According to the charge sheet, what specific crime was she convicted for?<br>根據起訴書，當局最初判處她有罪的具體罪名是什麼？",
+                video: "C6pwtzTfw18" // Sonia Case Video (Updated)
+            },
+            end: {
+                text: "🎉 **CASE CLOSED!**\n\nExcellent work, Detective.\n做得好，探員。\n\nSonia was jailed for **'Spreading False News'**.\nSonia 因「散播假新聞」而入獄。\nYour report is complete.",
+                badge: "https://placehold.co/300x300/27ae60/FFF?text=BADGE+EARNED",
+                link: "https://www.amnesty.tw/",
+                finalVideo: "Ai1Lxcke-1s" // Final Shorts Video
+            }
+        };
+
+        const gameState = {
+            step: 0, 
+            isProcessing: false
+        };
+
+        const chatBox = document.getElementById('chat-box');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const typingInd = document.getElementById('typing-indicator');
+
+        // --- 2. UI Functions ---
+
+        function scrollToBottom() {
+            setTimeout(() => { 
+                chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' }); 
+            }, 100);
+        }
+
+        function setTyping(active) {
+            active ? typingInd.classList.remove('hidden') : typingInd.classList.add('hidden');
+            if(active) scrollToBottom();
+        }
+
+        function getCurrentTime() {
+            const now = new Date();
+            return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        }
+
+        async function botReply(content, type = 'text') {
+            gameState.isProcessing = true;
+            sendBtn.disabled = true; // Prevent spamming
+            setTyping(true);
+
+            // Simulation delay based on content length
+            const delay = type === 'image' ? 1200 : 800; 
+
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    setTyping(false);
+                    
+                    const msgContainer = document.createElement('div');
+                    msgContainer.className = 'flex items-start gap-2 msg-animate mb-4 w-full';
+                    
+                    let innerContent = '';
+                    
+                    if (type === 'image') {
+                        innerContent = `
+                            <div class="rounded-xl overflow-hidden border border-gray-200 shadow-sm max-w-[260px] bubble-left relative bg-white">
+                                <img src="${content}" class="w-full h-auto object-cover" onload="scrollToBottom()" onerror="this.src='https://placehold.co/400x300?text=Image+Error'">
+                            </div>`;
+                    } else if (type === 'video') {
+                        // Added autoplay=1 to ensure videos play automatically when inserted
+                        innerContent = `
+                            <div class="rounded-xl overflow-hidden border border-gray-200 shadow-sm w-full max-w-[280px] bubble-left relative bg-white">
+                                <div class="aspect-video w-full">
+                                    <iframe class="w-full h-full" src="https://www.youtube.com/embed/${content}?autoplay=1" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                                </div>
+                            </div>`;
+                    } else if (type === 'button') {
+                        innerContent = `
+                            <div class="bg-white p-3 rounded-xl shadow-sm text-gray-800 text-sm max-w-[85%] bubble-left relative">
+                                <p class="mb-3">${content.text}</p>
+                                <a href="${content.link}" target="_blank" class="block w-full bg-line-green text-white text-center py-2.5 rounded-lg font-bold hover:bg-green-600 transition shadow-sm">${content.btnText}</a>
+                                <div class="text-[10px] text-gray-400 text-right mt-1">${getCurrentTime()}</div>
+                            </div>`;
+                    } else {
+                        // Text processing
+                        innerContent = `
+                            <div class="bg-white p-3 rounded-xl shadow-sm text-gray-800 text-sm leading-relaxed max-w-[85%] bubble-left relative">
+                                ${content}
+                                <div class="text-[10px] text-gray-400 text-right mt-1">${getCurrentTime()}</div>
+                            </div>`;
+                    }
+
+                    msgContainer.innerHTML = `
+                        <div class="w-10 h-10 rounded-full bg-line-header border border-white flex items-center justify-center text-white shrink-0 shadow-sm z-10">
+                            <i class="fas fa-user-secret"></i>
+                        </div>
+                        <div class="flex flex-col gap-1 w-full">
+                            <span class="text-[10px] text-gray-600 ml-1">Commander</span>
+                            ${innerContent}
+                        </div>
+                    `;
+
+                    chatBox.appendChild(msgContainer);
+                    scrollToBottom();
+                    gameState.isProcessing = false;
+                    sendBtn.disabled = false;
+                    resolve();
+                }, delay);
+            });
+        }
+
+        function userReply(text) {
+            const msgContainer = document.createElement('div');
+            msgContainer.className = 'flex items-end justify-end gap-2 msg-animate mb-4';
+            msgContainer.innerHTML = `
+                <div class="flex flex-col items-end max-w-[80%]">
+                    <div class="bg-line-green text-white p-3 rounded-xl shadow-sm text-sm leading-relaxed break-words bubble-right relative">
+                        ${text}
+                    </div>
+                    <div class="flex items-center gap-1 mt-1 mr-1">
+                        <span class="text-[10px] text-gray-500">Read</span>
+                        <span class="text-[10px] text-gray-500">${getCurrentTime()}</span>
+                    </div>
+                </div>
+            `;
+            chatBox.appendChild(msgContainer);
+            scrollToBottom();
+        }
+
+        // --- 3. Game Logic ---
+
+        async function initGame() {
+            // Initial Date Stamp
+            const dateDiv = document.createElement('div');
+            dateDiv.className = 'text-center my-4';
+            dateDiv.innerHTML = '<span class="bg-black/20 text-white text-xs py-1 px-3 rounded-full backdrop-blur-sm shadow-sm">Today</span>';
+            chatBox.appendChild(dateDiv);
+
+            // Intro Sequence with specific image position
+            await botReply(gameData.intro.part1);
+            await botReply(gameData.intro.image, 'image');
+            await botReply(gameData.intro.part2);
+        }
+
+        async function handleLogic(input) {
+            const text = input.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, ''); // Allow Chinese chars
+            
+            if (gameState.isProcessing) return;
+
+            // 0. START
+            if (gameState.step === 0) {
+                if (text.includes('start') || text.includes('開始')) {
+                    gameState.step = 1;
+                    await botReply(gameData.level1.text);
+                    await botReply(gameData.level1.image, 'image');
+                    await botReply("Input the number (e.g., 500):");
+                } else {
+                    await botReply("Agent, type **Start** to open the case.\n探員，請輸入 **Start** 開啟案件。");
+                }
+                return;
+            }
+
+            // 1. DATA FILE (Q1) -> Answer: 1 Million
+            if (gameState.step === 1) {
+                if (text.includes('1000000') || text.includes('1m') || text.includes('one') || text.includes('100') || text.includes('百萬')) {
+                    gameState.step = 2;
+                    await botReply("✅ **Data Recovered.**\nCorrect. Nearly 1 Million people.\n正確，將近一百萬人。");
+                    await botReply("----------------");
+                    await botReply(gameData.level2.text);
+                    await botReply(gameData.level2.video, 'video');
+                    await botReply(gameData.level2.image, 'image');
+                } else if (text.includes('hint') || text.includes('提示')) {
+                    await botReply("💡 Hint: Look at the last bar on the graph.\n提示：看圖表上最後一根長條的高度。");
+                } else {
+                    await botReply("❌ Analysis Failed. Check the chart again.\n分析失敗，請重新檢查圖表。");
+                }
+                return;
+            }
+
+            // 2. SCENE INVESTIGATION (Q2) -> Answer: Pit Latrine
+            if (gameState.step === 2) {
+                if (text.includes('pit') || text.includes('latrine') || text.includes('toilet') || text.includes('旱廁') || text.includes('b')) {
+                    gameState.step = 3;
+                    await botReply("✅ **Hazard Identified.**\nPit Latrine (旱廁). A tragedy caused by neglect.\n這是因忽視而造成的悲劇。");
+                    await botReply("----------------");
+                    await botReply(gameData.level3.text);
+                    await botReply(gameData.level3.image, 'image');
+                } else if (text.includes('hint') || text.includes('提示')) {
+                    await botReply("💡 Hint: Item B looks dangerous.\n提示：物品 B 看起來很危險。");
+                } else {
+                    await botReply("❌ Negative. Look for the 'Pit Latrine'.\n不對，請尋找「旱廁」。");
+                }
+                return;
+            }
+
+            // 3. LOGIC TEST (Q3) -> Answer: B
+            if (gameState.step === 3) {
+                if (text === 'b' || text.includes('everyone')) {
+                    gameState.step = 4;
+                    await botReply("✅ **Verified.**\nRights belong to everyone.\n人權屬於每一個人。");
+                    // Insert verified image here
+                    await botReply(gameData.level3.successImage, 'image');
+                    await botReply("----------------");
+                    await botReply(gameData.level4.text);
+                    await botReply(gameData.level4.image, 'image');
+                } else {
+                    await botReply("❌ Logic Error. Review the Universal Declaration.\n邏輯錯誤。請回顧世界人權宣言。");
+                }
+                return;
+            }
+
+            // 4. EVIDENCE BOARD (Q4) -> Answer: JUAN
+            if (gameState.step === 4) {
+                if (text.includes('juan')) {
+                    gameState.step = 5;
+                    await botReply("✅ **Identity Confirmed: Juan López.**\nHe fought for the river.\n他為了守護河流而戰。");
+                    // Insert Juan's video here
+                    await botReply(gameData.level4.successVideo, 'video');
+                    await botReply("----------------");
+                    await botReply(gameData.level5.text);
+                    await botReply(gameData.level5.video, 'video');
+                } else if (text.includes('hint') || text.includes('提示')) {
+                    await botReply("💡 Hint: J _ _ _.\n提示：J 開頭的名字。");
+                } else {
+                    await botReply("❌ Unknown Subject. Look at the name tag.\n對象不明。看看名牌。");
+                }
+                return;
+            }
+
+            // 5. SONIA DAHMANI CASE (Q5) -> Answer: FALSE NEWS
+            if (gameState.step === 5) {
+                // 檢查關鍵字：false news, fake news, 假新聞, 謠言, 散播
+                if (text.includes('false') || text.includes('fake') || text.includes('news') || text.includes('假新聞') || text.includes('謠言') || text.includes('散播')) {
+                    gameState.step = 6;
+                    await botReply(gameData.end.badge, 'image');
+                    await botReply({
+                        text: gameData.end.text,
+                        link: gameData.end.link,
+                        btnText: "✍️ Write for Rights / 寫信聲援"
+                    }, 'button');
+                    // Final Video
+                    await botReply(gameData.end.finalVideo, 'video');
+                } else if (text.includes('hint') || text.includes('提示')) {
+                    await botReply("💡 Hint: It involves speaking untruths online or in media.\n提示：這涉及在媒體上散布不實訊息。");
+                } else {
+                    await botReply("❌ Incorrect Charge. Check the case file again.\n罪名不符。請再次檢查案件檔案。");
+                }
+                return;
+            }
+
+            // END
+            if (gameState.step === 6) {
+                await botReply("Case Closed. Thank you for your service. 🕯️\n案件已結案。感謝你的服務。");
+            }
+        }
+
+        // --- 4. Event Listeners ---
+        function send() {
+            const val = userInput.value;
+            if(!val.trim()) return;
+            
+            userReply(val);
+            userInput.value = '';
+            handleLogic(val);
+        }
+
+        sendBtn.onclick = send;
+        userInput.onkeydown = (e) => { if(e.key === 'Enter') send(); };
+
+        // Start Game
+        window.onload = initGame;
+
+    </script>
+</body>
+</html>
